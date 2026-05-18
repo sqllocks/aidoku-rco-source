@@ -1,7 +1,7 @@
 #![no_std]
 
 use aidoku::{
-    alloc::{format, string::String, vec, vec::Vec},
+    alloc::{format, string::{String, ToString}, vec, vec::Vec},
     imports::net::Request,
     prelude::*,
     Chapter, ContentRating, DynamicFilters, Filter, FilterValue, Listing, ListingProvider,
@@ -182,7 +182,7 @@ fn parse_comic_list(url: &str) -> Result<MangaPageResult> {
 
     let has_next_page = doc
         .select("ul.pagination li > a")
-        .map(|list| list.any(|a| {
+        .map(|mut list| list.any(|a| {
             a.attr("href")
                 .map(|h| h.contains("page="))
                 .unwrap_or(false)
@@ -219,7 +219,7 @@ fn parse_latest_release(url: &str) -> Result<MangaPageResult> {
 
     let has_next_page = doc
         .select("ul.pagination li > a")
-        .map(|list| list.any(|a| {
+        .map(|mut list| list.any(|a| {
             a.attr("href")
                 .map(|h| h.contains("page="))
                 .unwrap_or(false)
