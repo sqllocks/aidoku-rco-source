@@ -80,6 +80,10 @@ impl Source for RcoSource {
                         .unwrap_or(href.as_str())
                         .to_string();
                     let title = a.text()?;
+                    let chapter_number = key
+                        .rsplit('/')
+                        .next()
+                        .and_then(|s| s.parse::<f32>().ok());
                     let date = item
                         .select_first("div.date-chapter-title-rtl")
                         .and_then(|e| e.text())
@@ -87,6 +91,7 @@ impl Source for RcoSource {
                     Some(Chapter {
                         key,
                         title: Some(title),
+                        chapter_number,
                         date_uploaded: date,
                         ..Default::default()
                     })
