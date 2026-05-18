@@ -44,15 +44,17 @@ impl Source for RcoSource {
             return Ok(manga);
         }
 
+        // Cover URL is deterministic from the slug — always set it regardless of needs_details
+        let slug = manga.key.trim_start_matches("/comic/");
+        manga.cover = Some(format!(
+            "{}/uploads/manga/{}/cover/cover_250x350.jpg",
+            BASE_URL, slug
+        ));
+
         let url = format!("{}{}", BASE_URL, manga.key);
         let doc = Request::get(&url)?.html()?;
 
         if needs_details {
-            let slug = manga.key.trim_start_matches("/comic/");
-            manga.cover = Some(format!(
-                "{}/uploads/manga/{}/cover/cover_250x350.jpg",
-                BASE_URL, slug
-            ));
 
             if let Some(title) = doc.select_first("h2.listmanga-header").and_then(|e| e.text()) {
                 let t = title.trim().to_string();
