@@ -1,15 +1,14 @@
 {
   "info": {
-    "id": "en.readcomiconline",
+    "id": "en.readcomicsonline",
     "lang": "en",
-    "name": "ReadComicOnline",
+    "name": "Read Comics Online",
     "version": 1,
-    "url": "https://readcomiconline.li",
+    "url": "https://readcomicsonline.ru",
     "nsfw": 0
   },
   "listings": [
-    { "id": "popular", "name": "Most Popular", "canFilter": false },
-    { "id": "latest",  "name": "Latest Update", "canFilter": false },
-    { "id": "newest",  "name": "Newest",         "canFilter": false }
+    { "id": "latest", "name": "Latest Release", "canFilter": false },
+    { "id": "all",    "name": "All Comics",     "canFilter": false }
   ]
 }
