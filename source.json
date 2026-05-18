@@ -1,0 +1,15 @@
+{
+  "info": {
+    "id": "en.readcomiconline",
+    "lang": "en",
+    "name": "ReadComicOnline",
+    "version": 1,
+    "url": "https://readcomiconline.li",
+    "nsfw": 0
+  },
+  "listings": [
+    { "id": "popular", "name": "Most Popular", "canFilter": false },
+    { "id": "latest",  "name": "Latest Update", "canFilter": false },
+    { "id": "newest",  "name": "Newest",         "canFilter": false }
+  ]
+}
