@@ -2,6 +2,7 @@
 
 use aidoku::{
     alloc::{format, string::{String, ToString}, vec, vec::Vec},
+    helpers::uri::encode_uri_component,
     imports::net::Request,
     prelude::*,
     Chapter, ContentRating, DynamicFilters, Filter, FilterValue, Listing, ListingProvider,
@@ -18,11 +19,19 @@ impl Source for RcoSource {
 
     fn get_search_manga_list(
         &self,
-        _query: Option<String>,
+        query: Option<String>,
         page: i32,
         _filters: Vec<FilterValue>,
     ) -> Result<MangaPageResult> {
-        parse_comic_list(&format!("{}/comic-list?page={}", BASE_URL, page))
+        match query.as_deref().filter(|q| !q.trim().is_empty()) {
+            Some(q) => {
+                let url = format!("{}/search?query={}", BASE_URL, encode_uri_component(q));
+                let json = Request::get(&url)?.string()?;
+                let entries = parse_search_json(&json);
+                Ok(MangaPageResult { entries, has_next_page: false })
+            }
+            None => parse_comic_list(&format!("{}/comic-list?page={}", BASE_URL, page)),
+        }
     }
 
     fn get_manga_update(
@@ -227,6 +236,86 @@ fn parse_latest_release(url: &str) -> Result<MangaPageResult> {
         .unwrap_or(false);
 
     Ok(MangaPageResult { entries, has_next_page })
+}
+
+/// Parses the JSON autocomplete response from /search?query=...
+/// Format: {"suggestions":[{"value":"Title","data":"slug"},...]}`
+fn parse_search_json(json: &str) -> Vec<Manga> {
+    let mut results = Vec::new();
+    let mut pos = 0;
+
+    loop {
+        // Find next "value":"
+        let val_key = match json[pos..].find("\"value\":\"") {
+            Some(p) => pos + p + 9,
+            None => break,
+        };
+        let val_end = match find_json_string_end(&json[val_key..]) {
+            Some(p) => val_key + p,
+            None => break,
+        };
+        let title = unescape_json_string(&json[val_key..val_end]);
+
+        // Find "data":" immediately after this value entry
+        pos = val_end;
+        let data_key = match json[pos..].find("\"data\":\"") {
+            Some(p) => pos + p + 8,
+            None => break,
+        };
+        let data_end = match find_json_string_end(&json[data_key..]) {
+            Some(p) => data_key + p,
+            None => break,
+        };
+        let slug = &json[data_key..data_end];
+
+        let key = format!("/comic/{}", slug);
+        let cover = Some(format!(
+            "{}/uploads/manga/{}/cover/cover_250x350.jpg",
+            BASE_URL, slug
+        ));
+        results.push(Manga { key, title, cover, ..Default::default() });
+        pos = data_end;
+    }
+
+    results
+}
+
+/// Returns the byte index of the closing `"` of a JSON string, starting just
+/// after the opening quote. Handles `\"` escapes.
+fn find_json_string_end(s: &str) -> Option<usize> {
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'"' => return Some(i),
+            b'\\' => i += 2,
+            _ => i += 1,
+        }
+    }
+    None
+}
+
+/// Replaces common JSON escape sequences in a string slice.
+fn unescape_json_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('"')  => out.push('"'),
+                Some('\\') => out.push('\\'),
+                Some('/')  => out.push('/'),
+                Some('n')  => out.push('\n'),
+                Some('t')  => out.push('\t'),
+                Some('r')  => out.push('\r'),
+                Some(other) => { out.push('\\'); out.push(other); }
+                None => {}
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// Given the first page's image URL and a total page count, generate all URLs.
