@@ -25,7 +25,10 @@ impl Source for RcoSource {
     ) -> Result<MangaPageResult> {
         match query.as_deref().filter(|q| !q.trim().is_empty()) {
             Some(q) => {
-                let url = format!("{}/search?query={}", BASE_URL, encode_uri_component(q));
+                // The autocomplete API returns HTTP 500 on any query containing '(' or ')'.
+                // Strip trailing parenthetical suffixes like "(2018-)" before searching.
+                let q_clean = q.find('(').map(|i| q[..i].trim_end()).unwrap_or(q);
+                let url = format!("{}/search?query={}", BASE_URL, encode_uri_component(q_clean));
                 let json = Request::get(&url)?.string()?;
                 let entries = parse_search_json(&json);
                 Ok(MangaPageResult { entries, has_next_page: false })
