@@ -112,45 +112,32 @@ impl Source for RcoSource {
         let url = format!("{}{}", BASE_URL, chapter.key);
         let doc = Request::get(&url)?.html()?;
 
-        let first_img = match doc
-            .select_first("img[src*='/uploads/manga/']")
-            .and_then(|e| e.attr("src"))
-        {
-            Some(u) => u,
-            None => bail!("No images found on reader page"),
-        };
-
-        let first_img = if first_img.starts_with("//") {
-            format!("https:{}", first_img)
-        } else if first_img.starts_with('/') {
-            format!("{}{}", BASE_URL, first_img)
-        } else {
-            first_img
-        };
-
-        let total_pages = doc
-            .select(".pager a, .pagination a")
+        // Images are lazy-loaded: src is a base64 placeholder, real URL is in data-src.
+        // data-src values have leading/trailing whitespace — trim before use.
+        let pages: Vec<Page> = doc
+            .select("img.img-responsive")
             .map(|list| {
-                list.filter_map(|a| {
-                    a.text().and_then(|t| t.trim().parse::<i32>().ok())
+                list.filter_map(|img| {
+                    let raw = img.attr("data-src")?;
+                    let src = raw.trim().to_string();
+                    if src.contains("/uploads/manga/") {
+                        Some(Page {
+                            content: PageContent::url(src),
+                            ..Default::default()
+                        })
+                    } else {
+                        None
+                    }
                 })
-                .max()
-                .unwrap_or(1)
+                .collect()
             })
-            .unwrap_or(1);
+            .unwrap_or_default();
 
-        let pages = generate_page_urls(&first_img, total_pages);
         if pages.is_empty() {
-            bail!("Could not generate page URLs for this chapter");
+            bail!("No pages found for chapter");
         }
 
-        Ok(pages
-            .into_iter()
-            .map(|url| Page {
-                content: PageContent::url(url),
-                ..Default::default()
-            })
-            .collect())
+        Ok(pages)
     }
 }
 
@@ -328,26 +315,6 @@ fn unescape_json_string(s: &str) -> String {
     out
 }
 
-/// Given the first page's image URL and a total page count, generate all URLs.
-fn generate_page_urls(first_url: &str, total: i32) -> Vec<String> {
-    let slash = match first_url.rfind('/') {
-        Some(p) => p,
-        None    => return Vec::new(),
-    };
-    let prefix   = &first_url[..slash];
-    let filename = &first_url[slash + 1..];
-
-    let (stem, ext) = match filename.rfind('.') {
-        Some(p) => (&filename[..p], &filename[p..]),
-        None    => (filename, ""),
-    };
-
-    let pad = stem.len().max(2);
-
-    (1..=total)
-        .map(|n| format!("{}/{:0>width$}{}", prefix, n, ext, width = pad))
-        .collect()
-}
 
 fn parse_date(s: &str) -> Option<i64> {
     // Format: "14 May. 2026" or "08 Apr. 2026"
