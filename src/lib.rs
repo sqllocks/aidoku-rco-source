@@ -379,7 +379,7 @@ fn parse_date(s: &str) -> Option<i64> {
     let month: i64 = parts.next()?.trim().parse().ok()?;
     let day:   i64 = parts.next()?.trim().parse().ok()?;
     let year:  i64 = parts.next()?.trim().parse().ok()?;
-    Some(days_since_epoch(year, month, day) * 86400)
+    days_since_epoch(year, month, day).checked_mul(86400)
 }
 
 fn days_since_epoch(year: i64, month: i64, day: i64) -> i64 {
