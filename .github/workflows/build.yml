@@ -50,7 +50,8 @@ jobs:
       - name: Generate source list
         run: |
           mkdir -p public
-          printf '{"name":"ReadComicOnline Sources","sources":[{"id":"en.readcomiconline","name":"ReadComicOnline","version":1,"downloadURL":"https://github.com/SQLLocks/aidoku-rco-source/releases/latest/download/ReadComicOnline.aix","languages":["en"],"contentRating":1}]}\n' > public/index.min.json
+          printf '{"name":"ReadComicOnline Sources","sources":[{"id":"en.readcomiconline","name":"ReadComicOnline","version":1,"downloadURL":"https://github.com/SQLLocks/aidoku-rco-source/releases/latest/download/ReadComicOnline.aix","languages":["en"]}]}\n' > public/index.min.json
+          cp public/index.min.json public/index.json
 
       - name: Deploy source list to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
