@@ -43,16 +43,17 @@ impl Source for RcoSource {
         needs_details: bool,
         needs_chapters: bool,
     ) -> Result<Manga> {
-        if !needs_details && !needs_chapters {
-            return Ok(manga);
-        }
-
-        // Cover URL is deterministic from the slug — always set it regardless of needs_details
+        // Cover is a pure computation — always update it so migrated/cached entries
+        // get the correct URL even when Aidoku calls with needs_details=false, needs_chapters=false.
         let slug = manga.key.trim_start_matches("/comic/");
         manga.cover = Some(format!(
             "{}/uploads/manga/{}/cover/cover_250x350.jpg",
             BASE_URL, slug
         ));
+
+        if !needs_details && !needs_chapters {
+            return Ok(manga);
+        }
 
         let url = format!("{}{}", BASE_URL, manga.key);
         let doc = Request::get(&url)?.html()?;
