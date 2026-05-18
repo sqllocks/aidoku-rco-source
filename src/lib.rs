@@ -1,10 +1,10 @@
 #![no_std]
 
 use aidoku::{
-    alloc::{format, string::String, vec::Vec},
+    alloc::{format, string::String, vec, vec::Vec},
     imports::net::Request,
     prelude::*,
-    Chapter, ContentRating, FilterValue, Listing, ListingProvider,
+    Chapter, ContentRating, DynamicFilters, Filter, FilterValue, Listing, ListingProvider,
     Manga, MangaPageResult, MangaStatus, Page, PageContent,
     Result, Source,
 };
@@ -148,7 +148,13 @@ impl ListingProvider for RcoSource {
     }
 }
 
-register_source!(RcoSource, ListingProvider);
+impl DynamicFilters for RcoSource {
+    fn get_dynamic_filters(&self) -> Result<Vec<Filter>> {
+        Ok(vec![])
+    }
+}
+
+register_source!(RcoSource, ListingProvider, DynamicFilters);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -176,9 +182,17 @@ fn parse_comic_list(url: &str) -> Result<MangaPageResult> {
         })
         .unwrap_or_default();
 
-    // has_next_page: pagination exists AND its last item is not disabled
-    let has_next_page = doc.select_first("ul.pagination").is_some()
-        && doc.select_first("ul.pagination > li:last-child.disabled").is_none();
+    // has_next_page: there is a pagination "next" link (an <a> inside li.disabled
+    // would mean last page; an <a> that exists means more pages remain).
+    // Use a simple check: any pagination link with href containing "page=" exists.
+    let has_next_page = doc
+        .select("ul.pagination li > a")
+        .map(|list| list.any(|a| {
+            a.attr("href")
+                .map(|h| h.contains("page="))
+                .unwrap_or(false)
+        }))
+        .unwrap_or(false);
 
     Ok(MangaPageResult { entries, has_next_page })
 }
