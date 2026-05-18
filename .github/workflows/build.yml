@@ -36,6 +36,9 @@ jobs:
       - name: Build source
         run: aidoku package
 
+      - name: Rename artifact
+        run: mv package.aix ReadComicOnline.aix
+
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
