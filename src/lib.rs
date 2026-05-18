@@ -22,7 +22,6 @@ impl Source for RcoSource {
         page: i32,
         _filters: Vec<FilterValue>,
     ) -> Result<MangaPageResult> {
-        // No accessible search endpoint on this site; fall back to full comic list
         parse_comic_list(&format!("{}/comic-list?page={}", BASE_URL, page))
     }
 
@@ -40,19 +39,21 @@ impl Source for RcoSource {
         let doc = Request::get(&url)?.html()?;
 
         if needs_details {
-            // Cover URL is predictable from the slug
             let slug = manga.key.trim_start_matches("/comic/");
             manga.cover = Some(format!(
                 "{}/uploads/manga/{}/cover/cover_250x350.jpg",
                 BASE_URL, slug
             ));
 
-            if let Some(title) = doc.select_first("h2.widget-title").and_then(|e| e.text()) {
-                manga.title = title;
+            if let Some(title) = doc.select_first("h2.listmanga-header").and_then(|e| e.text()) {
+                let t = title.trim().to_string();
+                if !t.is_empty() {
+                    manga.title = t;
+                }
             }
 
             manga.description = doc
-                .select_first(".summary")
+                .select_first("div.manga.well p")
                 .and_then(|e| e.text())
                 .filter(|s| !s.is_empty());
 
@@ -61,9 +62,9 @@ impl Source for RcoSource {
         }
 
         if needs_chapters {
-            manga.chapters = doc.select(".chapter-item").map(|list| {
+            manga.chapters = doc.select("ul.chapters li").map(|list| {
                 list.filter_map(|item| {
-                    let a = item.select_first("h5 > a")?;
+                    let a = item.select_first("h5.chapter-title-rtl > a")?;
                     let href = a.attr("href")?;
                     let key = href
                         .strip_prefix(BASE_URL)
@@ -71,7 +72,7 @@ impl Source for RcoSource {
                         .to_string();
                     let title = a.text()?;
                     let date = item
-                        .select_first("span")
+                        .select_first("div.date-chapter-title-rtl")
                         .and_then(|e| e.text())
                         .and_then(|s| parse_date(&s));
                     Some(Chapter {
@@ -92,16 +93,14 @@ impl Source for RcoSource {
         let url = format!("{}{}", BASE_URL, chapter.key);
         let doc = Request::get(&url)?.html()?;
 
-        // First image on the page gives us the URL pattern for all pages
         let first_img = match doc
             .select_first("img[src*='/uploads/manga/']")
             .and_then(|e| e.attr("src"))
         {
             Some(u) => u,
-            None => bail!("No images found on reader page — source may need updating"),
+            None => bail!("No images found on reader page"),
         };
 
-        // Normalise to absolute URL
         let first_img = if first_img.starts_with("//") {
             format!("https:{}", first_img)
         } else if first_img.starts_with('/') {
@@ -110,7 +109,6 @@ impl Source for RcoSource {
             first_img
         };
 
-        // Total page count = largest number in the pagination links
         let total_pages = doc
             .select(".pager a, .pagination a")
             .map(|list| {
@@ -139,12 +137,11 @@ impl Source for RcoSource {
 
 impl ListingProvider for RcoSource {
     fn get_manga_list(&self, listing: Listing, page: i32) -> Result<MangaPageResult> {
-        let url = match listing.id.as_str() {
-            "latest" => format!("{}/latest-release?page={}", BASE_URL, page),
-            "all"    => format!("{}/comic-list?page={}", BASE_URL, page),
+        match listing.id.as_str() {
+            "latest" => parse_latest_release(&format!("{}/latest-release?page={}", BASE_URL, page)),
+            "all"    => parse_comic_list(&format!("{}/comic-list?page={}", BASE_URL, page)),
             _        => bail!("Unknown listing id"),
-        };
-        parse_comic_list(&url)
+        }
     }
 }
 
@@ -158,7 +155,45 @@ register_source!(RcoSource, ListingProvider, DynamicFilters);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/// Parses the /comic-list page (media-body layout).
 fn parse_comic_list(url: &str) -> Result<MangaPageResult> {
+    let doc = Request::get(url)?.html()?;
+
+    let entries = doc
+        .select("h5.media-heading > a.chart-title")
+        .map(|list| {
+            list.filter_map(|a| {
+                let href = a.attr("href")?;
+                let key = href
+                    .strip_prefix(BASE_URL)
+                    .unwrap_or(href.as_str())
+                    .to_string();
+                let title = a.text()?;
+                let slug = key.trim_start_matches("/comic/");
+                let cover = Some(format!(
+                    "{}/uploads/manga/{}/cover/cover_250x350.jpg",
+                    BASE_URL, slug
+                ));
+                Some(Manga { key, title, cover, ..Default::default() })
+            })
+            .collect::<Vec<Manga>>()
+        })
+        .unwrap_or_default();
+
+    let has_next_page = doc
+        .select("ul.pagination li > a")
+        .map(|list| list.any(|a| {
+            a.attr("href")
+                .map(|h| h.contains("page="))
+                .unwrap_or(false)
+        }))
+        .unwrap_or(false);
+
+    Ok(MangaPageResult { entries, has_next_page })
+}
+
+/// Parses the /latest-release page (manga-item layout).
+fn parse_latest_release(url: &str) -> Result<MangaPageResult> {
     let doc = Request::get(url)?.html()?;
 
     let entries = doc
@@ -182,9 +217,6 @@ fn parse_comic_list(url: &str) -> Result<MangaPageResult> {
         })
         .unwrap_or_default();
 
-    // has_next_page: there is a pagination "next" link (an <a> inside li.disabled
-    // would mean last page; an <a> that exists means more pages remain).
-    // Use a simple check: any pagination link with href containing "page=" exists.
     let has_next_page = doc
         .select("ul.pagination li > a")
         .map(|list| list.any(|a| {
@@ -198,7 +230,6 @@ fn parse_comic_list(url: &str) -> Result<MangaPageResult> {
 }
 
 /// Given the first page's image URL and a total page count, generate all URLs.
-/// Pattern: `.../chapters/{id}/01.jpg` → `.../01.jpg`, `.../02.jpg`, ...
 fn generate_page_urls(first_url: &str, total: i32) -> Vec<String> {
     let slash = match first_url.rfind('/') {
         Some(p) => p,
@@ -208,7 +239,7 @@ fn generate_page_urls(first_url: &str, total: i32) -> Vec<String> {
     let filename = &first_url[slash + 1..];
 
     let (stem, ext) = match filename.rfind('.') {
-        Some(p) => (&filename[..p], &filename[p..]), // ext includes the dot
+        Some(p) => (&filename[..p], &filename[p..]),
         None    => (filename, ""),
     };
 
@@ -220,7 +251,7 @@ fn generate_page_urls(first_url: &str, total: i32) -> Vec<String> {
 }
 
 fn parse_date(s: &str) -> Option<i64> {
-    // Format: "12 Nov. 2025" or "5 Mar. 2026"
+    // Format: "14 May. 2026" or "08 Apr. 2026"
     let s = s.trim();
     let mut parts = s.split_whitespace();
     let day: i64   = parts.next()?.trim().parse().ok()?;
