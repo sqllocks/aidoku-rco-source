@@ -4,8 +4,8 @@ use aidoku::{
     alloc::{format, string::String, vec, vec::Vec},
     imports::net::Request,
     prelude::*,
-    Chapter, DynamicFilters, Filter, FilterValue, Listing, ListingProvider,
-    Manga, MangaPageResult, MultiSelectFilter, Page, PageContent,
+    Chapter, ContentRating, DynamicFilters, Filter, FilterValue, Listing, ListingProvider,
+    Manga, MangaPageResult, MangaStatus, MultiSelectFilter, Page, PageContent,
     Result, SelectFilter, Source, TextFilter,
 };
 
@@ -26,7 +26,86 @@ impl Source for RcoSource {
         parse_comic_list(&url)
     }
 
-    fn get_manga_update(&self, manga: Manga, _nd: bool, _nc: bool) -> Result<Manga> {
+    fn get_manga_update(
+        &self,
+        mut manga: Manga,
+        needs_details: bool,
+        needs_chapters: bool,
+    ) -> Result<Manga> {
+        if !needs_details && !needs_chapters {
+            return Ok(manga);
+        }
+
+        let url = format!("{}{}", BASE_URL, manga.key);
+        let doc = Request::get(&url)?.html()?;
+
+        if needs_details {
+            let info = doc
+                .select_first("div.barContent")
+                .ok_or(aidoku::imports::error::AidokuError::Unimplemented)?;
+
+            if let Some(title) = info.select_first("a.bigChar").and_then(|e| e.text()) {
+                manga.title = title;
+            }
+
+            manga.cover = doc
+                .select_first(".rightBox:eq(0) img")
+                .and_then(|e| e.attr("src"));
+
+            manga.description = info
+                .select("p:has(span:contains(Summary:)) ~ p")
+                .map(|list| {
+                    list.filter_map(|e| e.text())
+                        .collect::<Vec<_>>()
+                        .join("\n\n")
+                })
+                .filter(|s| !s.is_empty());
+
+            manga.tags = info
+                .select("p:has(span:contains(Genres:)) > a")
+                .map(|list| list.filter_map(|e| e.text()).collect::<Vec<_>>());
+
+            manga.status = info
+                .select_first("p:has(span:contains(Status:))")
+                .and_then(|e| e.text())
+                .map(|s| {
+                    if s.contains("Ongoing") {
+                        MangaStatus::Ongoing
+                    } else if s.contains("Completed") {
+                        MangaStatus::Completed
+                    } else {
+                        MangaStatus::Unknown
+                    }
+                })
+                .unwrap_or(MangaStatus::Unknown);
+
+            manga.content_rating = ContentRating::Safe;
+        }
+
+        if needs_chapters {
+            manga.chapters = doc
+                .select("table.listing tr")
+                .map(|list| {
+                    list.skip(2)
+                        .filter_map(|row| {
+                            let a    = row.select_first("a")?;
+                            let key  = a.attr("href")?;
+                            let name = a.text()?;
+                            let date = row
+                                .select_first("td:eq(1)")
+                                .and_then(|e| e.text())
+                                .and_then(|s| parse_date(&s));
+                            Some(Chapter {
+                                key,
+                                title: Some(name),
+                                date_uploaded: date,
+                                ..Default::default()
+                            })
+                        })
+                        .collect::<Vec<Chapter>>()
+                });
+        }
+
         Ok(manga)
     }
 
@@ -294,6 +373,21 @@ fn genre_id(name: &str) -> Option<&'static str> {
     }
 }
 
+fn parse_date(s: &str) -> Option<i64> {
+    // Format: MM/dd/yyyy
+    let mut parts = s.trim().split('/');
+    let month: i64 = parts.next()?.trim().parse().ok()?;
+    let day:   i64 = parts.next()?.trim().parse().ok()?;
+    let year:  i64 = parts.next()?.trim().parse().ok()?;
+    Some(days_since_epoch(year, month, day) * 86400)
+}
+
+fn days_since_epoch(year: i64, month: i64, day: i64) -> i64 {
+    let (y, m) = if month <= 2 { (year - 1, month + 12) } else { (year, month) };
+    let jdn = day + (153 * m - 457) / 5 + 365 * y + y / 4 - y / 100 + y / 400 + 1721119;
+    jdn - 2440588
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -322,5 +416,25 @@ mod tests {
         let page = result.unwrap();
         assert!(!page.entries.is_empty(), "No results for 'batman'");
         println!("Search 'batman': {} results", page.entries.len());
+    }
+
+    #[aidoku_test]
+    fn test_manga_detail() {
+        let manga = Manga {
+            key: String::from("/Comic/Batman-2016"),
+            title: String::from("Batman"),
+            ..Default::default()
+        };
+        let source = RcoSource::new();
+        let result = source.get_manga_update(manga, true, true);
+        assert!(result.is_ok(), "get_manga_update failed: {:?}", result);
+        let m = result.unwrap();
+        assert!(!m.title.is_empty(), "Empty title");
+        assert!(m.chapters.is_some(), "No chapters");
+        let chapters = m.chapters.unwrap();
+        assert!(!chapters.is_empty(), "Chapter list is empty");
+        println!("Title: {}", m.title);
+        println!("Chapters: {}", chapters.len());
+        println!("First chapter key: {}", chapters[0].key);
     }
 }
