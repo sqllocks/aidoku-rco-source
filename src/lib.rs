@@ -42,9 +42,10 @@ impl Source for RcoSource {
         let doc = Request::get(&url)?.html()?;
 
         if needs_details {
-            let info = doc
-                .select_first("div.barContent")
-                .ok_or(aidoku::imports::error::AidokuError::Unimplemented)?;
+            let info = match doc.select_first("div.barContent") {
+                Some(el) => el,
+                None => bail!("comic detail section not found in page"),
+            };
 
             if let Some(title) = info.select_first("a.bigChar").and_then(|e| e.text()) {
                 manga.title = title;
@@ -131,9 +132,10 @@ impl Source for RcoSource {
         );
 
         let ctx = JsContext::new();
-        let json_result = ctx
-            .eval(&js)
-            .map_err(|_| aidoku::imports::error::AidokuError::Unimplemented)?;
+        let json_result = match ctx.eval(&js) {
+            Ok(r) => r,
+            Err(_) => bail!("JavaScript image decryption failed — source may need updating"),
+        };
 
         let urls = parse_json_string_array(&json_result);
 
