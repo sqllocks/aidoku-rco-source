@@ -1,14 +1,14 @@
 {
   "info": {
     "id": "en.readcomicsonline",
-    "lang": "en",
     "name": "Read Comics Online",
-    "version": 1,
+    "version": 2,
+    "languages": ["en"],
     "url": "https://readcomicsonline.ru",
-    "nsfw": 0
+    "contentRating": 0
   },
   "listings": [
-    { "id": "latest", "name": "Latest Release", "canFilter": false },
-    { "id": "all",    "name": "All Comics",     "canFilter": false }
+    { "id": "latest", "name": "Latest Release" },
+    { "id": "all",    "name": "All Comics" }
   ]
 }
