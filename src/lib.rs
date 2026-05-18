@@ -5,8 +5,8 @@ use aidoku::{
     helpers::uri::encode_uri_component,
     imports::net::Request,
     prelude::*,
-    Chapter, ContentRating, DynamicFilters, Filter, FilterValue, Listing, ListingProvider,
-    Manga, MangaPageResult, MangaStatus, Page, PageContent,
+    Chapter, ContentRating, DynamicFilters, Filter, FilterValue, ImageRequestProvider,
+    Listing, ListingProvider, Manga, MangaPageResult, MangaStatus, Page, PageContent, PageContext,
     Result, Source,
 };
 
@@ -158,7 +158,13 @@ impl DynamicFilters for RcoSource {
     }
 }
 
-register_source!(RcoSource, ListingProvider, DynamicFilters);
+impl ImageRequestProvider for RcoSource {
+    fn get_image_request(&self, url: String, _context: Option<PageContext>) -> Result<Request> {
+        Ok(Request::get(&url)?.header("Referer", BASE_URL))
+    }
+}
+
+register_source!(RcoSource, ListingProvider, DynamicFilters, ImageRequestProvider);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
