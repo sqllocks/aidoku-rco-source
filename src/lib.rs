@@ -168,6 +168,7 @@ fn build_search_url(query: Option<String>, page: i32, filters: &[FilterValue]) -
                         "Latest Update" => String::from("LatestUpdate"),
                         "Newest"        => String::from("Newest"),
                         "Most Popular"  => String::from("MostPopular"),
+                        "Alphabetical"  => String::from("Alphabetical"),
                         _               => String::new(),
                     };
                 }
@@ -199,15 +200,11 @@ fn build_search_url(query: Option<String>, page: i32, filters: &[FilterValue]) -
     if has_query || !inc_names.is_empty() || !exc_names.is_empty() || !status.is_empty() {
         let ig: Vec<&str> = inc_names.iter().filter_map(|n| genre_id(n)).collect();
         let eg: Vec<&str> = exc_names.iter().filter_map(|n| genre_id(n)).collect();
-        return format!(
-            "{}/AdvanceSearch?comicName={}&ig={}&eg={}&status={}&page={}",
-            BASE_URL,
-            url_encode(&q),
-            ig.join(","),
-            eg.join(","),
-            status,
-            page
-        );
+        let mut url = format!("{}/AdvanceSearch?comicName={}&page={}", BASE_URL, url_encode(&q), page);
+        if !ig.is_empty() { url.push_str(&format!("&ig={}", ig.join(","))); }
+        if !eg.is_empty() { url.push_str(&format!("&eg={}", eg.join(","))); }
+        if !status.is_empty() { url.push_str(&format!("&status={}", status)); }
+        return url;
     }
 
     if !publisher.is_empty() {
